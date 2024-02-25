@@ -1,11 +1,14 @@
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
-import { GraphQLBoolean, GraphQLFloat, GraphQLInt, GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema, GraphQLString, graphql } from 'graphql';
+import { GraphQLBoolean, GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema, graphql, parse, validate } from 'graphql';
+import depthLimit from 'graphql-depth-limit';
 import { createGqlResponseSchema, gqlResponseSchema } from './schemas.js';
 import { MemberType, MemberTypeIdType } from './types/memberTypeId.js';
 import { ChangePostInputType, CreatePostInputType, PostType } from './types/post.js';
 import { ChangeProfileInputType, CreateProfileInputType, ProfileType } from './types/profile.js';
 import { ChangeUserInputType, CreateUserInputType, UserType } from './types/user.js';
 import { UUIDType } from './types/uuid.js';
+
+const DEPTH_LIMIT = 5;
 
 const schema = new GraphQLSchema({
   query: new GraphQLObjectType({
@@ -259,6 +262,14 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     },
     async handler(req) {
       const { query, variables } = req.body;
+      
+      const errors = validate(schema, parse(query), [depthLimit(DEPTH_LIMIT)]);
+
+      if (errors.length > 0) {
+        return {
+          errors,
+        }
+      }
 
       return await graphql({
         schema,
@@ -266,7 +277,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         variableValues: variables,
         contextValue: {
           prisma,
-        }
+        },
       });
     },
   });
