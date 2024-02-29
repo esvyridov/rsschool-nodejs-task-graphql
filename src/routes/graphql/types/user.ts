@@ -3,6 +3,19 @@ import { PostType } from './post.js';
 import { ProfileType } from './profile.js';
 import { UUIDType } from './uuid.js';
 
+export type User = {
+  id: string;
+  name: string;
+  balance:  number;
+  userSubscribedTo: {
+    id: string;
+    name: string;
+    subscribedToUser: {
+        id: string;
+    }[]
+  }[]
+};
+
 export const UserType = new GraphQLObjectType({
   name: 'User',
   fields: () => ({
@@ -11,50 +24,39 @@ export const UserType = new GraphQLObjectType({
     balance: { type: GraphQLFloat },
     profile: {
       type: ProfileType,
-      resolve(parent, args, { prisma }) {
-        return prisma.profile.findUnique({
-          where: {
-            userId: parent.id,
-          },
-        });
+      async resolve(parent, args, { loaders }) {
+        const { userProfileLoader } = loaders;
+
+        const profile = await userProfileLoader.load(parent.id);
+
+        return profile;
+
       },
     },
     posts: {
       type: new GraphQLList(PostType),
-      resolve(parent, args, { prisma }) {
-        return prisma.post.findMany({
-          where: {
-            authorId: parent.id,
-          },
-        });
+      async resolve(parent, args, { loaders }) {
+        const { userPostsLoader } = loaders;
+
+        const posts = await userPostsLoader.load(parent.id);
+
+        return posts;
       },
     },
     userSubscribedTo: {
       type: new GraphQLList(UserType),
-      resolve(parent, args, { prisma }) {
-        return prisma.user.findMany({
-          where: {
-            subscribedToUser: {
-              some: {
-                subscriberId: parent.id,
-              },
-            },
-          },
-        });
+      async resolve(parent, args, { loaders }) {
+        const { userSubscribedToLoader } = loaders;
+
+        return await userSubscribedToLoader.load(parent.id);
       },
     },
     subscribedToUser: {
       type: new GraphQLList(UserType),
-      resolve(parent, args, { prisma }) {
-        return prisma.user.findMany({
-          where: {
-            userSubscribedTo: {
-              some: {
-                authorId: parent.id,
-              },
-            },
-          },
-        });
+      async resolve(parent, args, { loaders }) {
+        const { subscribedToUserLoader } = loaders;
+
+        return await subscribedToUserLoader.load(parent.id);
       },
     }
   }),

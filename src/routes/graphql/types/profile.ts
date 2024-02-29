@@ -12,12 +12,12 @@ export const ProfileType = new GraphQLObjectType({
     memberTypeId: { type: MemberTypeIdType },
     memberType: {
       type: MemberType,
-      resolve(parent, args, { prisma }) {
-        return prisma.memberType.findUnique({
-          where: {
-            id: parent.memberTypeId,
-          },
-        });
+      async resolve(parent, args, { loaders }) {
+        const { userProfileLoader } = loaders;
+
+        const profile = await userProfileLoader.load(parent.userId);
+
+        return profile.memberType;
       },
     }
   },

@@ -3,10 +3,12 @@ import { GraphQLBoolean, GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQL
 import depthLimit from 'graphql-depth-limit';
 import { createGqlResponseSchema, gqlResponseSchema } from './schemas.js';
 import { MemberType, MemberTypeIdType } from './types/memberTypeId.js';
-import { ChangePostInputType, CreatePostInputType, PostType } from './types/post.js';
+import { ChangePostInputType, CreatePostInputType, Post, PostType } from './types/post.js';
 import { ChangeProfileInputType, CreateProfileInputType, ProfileType } from './types/profile.js';
-import { ChangeUserInputType, CreateUserInputType, UserType } from './types/user.js';
+import { ChangeUserInputType, CreateUserInputType, User, UserType } from './types/user.js';
 import { UUIDType } from './types/uuid.js';
+import DataLoader from 'dataloader';
+import { ResolveTree, parseResolveInfo, simplifyParsedResolveInfoFragmentWithType } from 'graphql-parse-resolve-info';
 
 const DEPTH_LIMIT = 5;
 
@@ -44,7 +46,7 @@ const schema = new GraphQLSchema({
         args: {
           id: { type: UUIDType },
         },
-        resolve(parent, args, { prisma }) {
+        async resolve(parent, args, { prisma }) {
           return prisma.post.findUnique({
             where: {
               id: args.id,
@@ -54,8 +56,23 @@ const schema = new GraphQLSchema({
       },
       users: {
         type: new GraphQLList(UserType),
-        resolve(parent, args, { prisma }) {
-          return prisma.user.findMany();
+        async resolve(parent, args, { prisma, loaders }, resolveInfo) {
+          const { usersLoader } = loaders;
+          
+          const parsedResolveInfoFragment = parseResolveInfo(resolveInfo);
+          const { fields } = simplifyParsedResolveInfoFragmentWithType(
+            parsedResolveInfoFragment as ResolveTree,
+            new GraphQLList(UserType)
+          );
+
+          const users = await prisma.user.findMany();
+
+
+          users.forEach((user: User) => {
+            usersLoader.prime(user.id, user);
+          });
+
+          return users;
         },
       },
       user: {
@@ -63,7 +80,7 @@ const schema = new GraphQLSchema({
         args: {
           id: { type: UUIDType },
         },
-        async resolve(parent, args, { prisma, httpErrors }) {
+        async resolve(parent, args, { prisma }) {
           return prisma.user.findUnique({
             where: {
               id: args.id,
@@ -73,7 +90,7 @@ const schema = new GraphQLSchema({
       },
       profiles: {
         type: new GraphQLList(ProfileType),
-        resolve(parent, args, { prisma }) {
+        async resolve(parent, args, { prisma }) {
           return prisma.profile.findMany();
         },
       },
@@ -271,12 +288,91 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         }
       }
 
+      const createUsersLoader = () => new DataLoader(async (userIds: readonly string[]) => {
+        return userIds.map((userId) => null);
+      });
+
+      const createUserPostsLoader = () => new DataLoader((async (userIds: readonly string[]) => {
+        const posts = await prisma.post.findMany({
+          where: {
+            authorId: { in: userIds as string[] }
+          }
+        });
+
+        return userIds.map((userId) => posts.filter((post) => post.authorId === userId));
+      }));
+
+      const createUserProfileLoader = () => new DataLoader((async (userIds: readonly string[]) => {
+        const memberTypes = await prisma.memberType.findMany();
+        const profiles = await prisma.profile.findMany({
+          where: {
+            userId: { in: userIds as string[] }
+          }
+        });
+
+        return userIds.map((userId) => {
+          const profile = profiles.find((profile) => profile.userId === userId);
+
+          if (!profile) { return undefined; }
+
+          return {
+            ...profile,
+            memberType: memberTypes.find((memberType) => memberType.id === profile.memberTypeId)
+          }
+        });
+      }));
+
+      const createUserSubscribedToLoader = () => new DataLoader(async (userIds: readonly string[]) => {
+        const users: any = await prisma.user.findMany({
+          include: {
+            subscribedToUser: true,
+          },
+          where: {
+            subscribedToUser: {
+              some: {
+                subscriberId: {
+                  in: userIds as string[],
+                },
+              },
+            }
+          }
+        });
+
+        return userIds.map((userId) => users.filter((user) => user.subscribedToUser.some((user) => user.subscriberId === userId)));
+      });
+
+      const createSubscribedToUserLoader = () => new DataLoader(async (userIds: readonly string[]) => {
+        const users: any = await prisma.user.findMany({
+          include: {
+            userSubscribedTo: true,
+          },
+          where: {
+            userSubscribedTo: {
+              some: {
+                authorId: {
+                  in: userIds as string[],
+                }
+              },
+            },
+          },
+        });
+
+        return userIds.map((userId) => users.filter((user) => user.userSubscribedTo.some((user) => user.authorId === userId)));
+      })
+
       return await graphql({
         schema,
         source: query,
         variableValues: variables,
         contextValue: {
           prisma,
+          loaders: {
+            usersLoader: createUsersLoader(),
+            userPostsLoader: createUserPostsLoader(),
+            userProfileLoader: createUserProfileLoader(),
+            userSubscribedToLoader: createUserSubscribedToLoader(),
+            subscribedToUserLoader: createSubscribedToUserLoader(),
+          }
         },
       });
     },
