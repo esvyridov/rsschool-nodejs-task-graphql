@@ -65,12 +65,14 @@ const schema = new GraphQLSchema({
             new GraphQLList(UserType)
           );
 
-          const users = await prisma.user.findMany();
-
-
-          users.forEach((user: User) => {
-            usersLoader.prime(user.id, user);
+          const users = await prisma.user.findMany({
+            include: {
+              userSubscribedTo: 'userSubscribedTo' in fields,
+              subscribedToUser: 'subscribedToUser' in fields,
+            }
           });
+
+          usersLoader.prime('users', users);
 
           return users;
         },
@@ -322,44 +324,6 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         });
       }));
 
-      const createUserSubscribedToLoader = () => new DataLoader(async (userIds: readonly string[]) => {
-        const users: any = await prisma.user.findMany({
-          include: {
-            subscribedToUser: true,
-          },
-          where: {
-            subscribedToUser: {
-              some: {
-                subscriberId: {
-                  in: userIds as string[],
-                },
-              },
-            }
-          }
-        });
-
-        return userIds.map((userId) => users.filter((user) => user.subscribedToUser.some((user) => user.subscriberId === userId)));
-      });
-
-      const createSubscribedToUserLoader = () => new DataLoader(async (userIds: readonly string[]) => {
-        const users: any = await prisma.user.findMany({
-          include: {
-            userSubscribedTo: true,
-          },
-          where: {
-            userSubscribedTo: {
-              some: {
-                authorId: {
-                  in: userIds as string[],
-                }
-              },
-            },
-          },
-        });
-
-        return userIds.map((userId) => users.filter((user) => user.userSubscribedTo.some((user) => user.authorId === userId)));
-      })
-
       return await graphql({
         schema,
         source: query,
@@ -370,8 +334,6 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
             usersLoader: createUsersLoader(),
             userPostsLoader: createUserPostsLoader(),
             userProfileLoader: createUserProfileLoader(),
-            userSubscribedToLoader: createUserSubscribedToLoader(),
-            subscribedToUserLoader: createSubscribedToUserLoader(),
           }
         },
       });

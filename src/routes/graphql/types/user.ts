@@ -45,18 +45,46 @@ export const UserType = new GraphQLObjectType({
     },
     userSubscribedTo: {
       type: new GraphQLList(UserType),
-      async resolve(parent, args, { loaders }) {
-        const { userSubscribedToLoader } = loaders;
+      async resolve(parent, args, { prisma, loaders }) {
+        const { usersLoader, userSubscribedToLoader } = loaders;
 
-        return await userSubscribedToLoader.load(parent.id);
+        const users = await usersLoader.load('users');
+
+        if (users) {
+          return users.filter((u) => u.subscribedToUser?.some((ust) => ust.subscriberId === parent.id));
+        }
+
+        return prisma.user.findMany({
+          where: {
+            subscribedToUser: {
+              some: {
+                subscriberId: parent.id,
+              },
+            },
+          },
+        });
       },
     },
     subscribedToUser: {
       type: new GraphQLList(UserType),
-      async resolve(parent, args, { loaders }) {
-        const { subscribedToUserLoader } = loaders;
+      async resolve(parent, args, { prisma, loaders }) {
+        const { usersLoader, subscribedToUserLoader } = loaders;
 
-        return await subscribedToUserLoader.load(parent.id);
+        const users = await usersLoader.load('users');
+
+        if (users) {
+          return users.filter((u) => u.userSubscribedTo?.some((ust) => ust.authorId === parent.id))
+        }
+
+        return prisma.user.findMany({
+          where: {
+            userSubscribedTo: {
+              some: {
+                authorId: parent.id,
+              },
+            },
+          },
+        });
       },
     }
   }),
