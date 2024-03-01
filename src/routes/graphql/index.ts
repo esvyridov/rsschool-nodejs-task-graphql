@@ -1,14 +1,14 @@
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
+import DataLoader from 'dataloader';
 import { GraphQLBoolean, GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema, graphql, parse, validate } from 'graphql';
 import depthLimit from 'graphql-depth-limit';
+import { ResolveTree, parseResolveInfo, simplifyParsedResolveInfoFragmentWithType } from 'graphql-parse-resolve-info';
 import { createGqlResponseSchema, gqlResponseSchema } from './schemas.js';
 import { MemberType, MemberTypeIdType } from './types/memberTypeId.js';
-import { ChangePostInputType, CreatePostInputType, Post, PostType } from './types/post.js';
+import { ChangePostInputType, CreatePostInputType, PostType } from './types/post.js';
 import { ChangeProfileInputType, CreateProfileInputType, ProfileType } from './types/profile.js';
-import { ChangeUserInputType, CreateUserInputType, User, UserType } from './types/user.js';
+import { ChangeUserInputType, CreateUserInputType, UserType } from './types/user.js';
 import { UUIDType } from './types/uuid.js';
-import DataLoader from 'dataloader';
-import { ResolveTree, parseResolveInfo, simplifyParsedResolveInfoFragmentWithType } from 'graphql-parse-resolve-info';
 
 const DEPTH_LIMIT = 5;
 
